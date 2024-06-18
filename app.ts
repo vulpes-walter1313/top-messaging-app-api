@@ -1,11 +1,18 @@
 import "dotenv/config";
-import express from "express";
+import express, {
+  type Express,
+  Request,
+  Response,
+  NextFunction,
+} from "express";
 import path from "path";
 import cookieParser from "cookie-parser";
 import logger from "morgan";
 import indexRouter from "./routes/index";
 import usersRouter from "./routes/users";
+import authRouter from "./routes/auth";
 import http from "http";
+import { ErrorWithStatus } from "./types/types";
 
 const app = express();
 
@@ -15,11 +22,38 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
 
+app.use("/", authRouter);
 app.use("/", indexRouter);
 app.use("/users", usersRouter);
 const server = http.createServer(app);
 const port = parseInt(process.env.PORT || "3000");
 app.set("port", port);
+
+app.all("*", (req, res, next) => {
+  const error = new Error("This resource does not exist") as Error & {
+    status: number;
+  };
+  error.status = 404;
+  next(error);
+});
+app.use(
+  (
+    err: ErrorWithStatus,
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): void => {
+    console.error(err);
+    err.message = err.message ?? "Unexpected Error occured";
+    res.status(err.status ?? 500).json({
+      success: false,
+      error: {
+        message: err.toString(),
+        status: err.status ?? 500,
+      },
+    });
+  },
+);
 
 server.listen(port);
 server.on("error", (error) => {
