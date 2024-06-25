@@ -1,12 +1,19 @@
 import type { Response, Request, NextFunction } from "express";
-import { body, matchedData, query, validationResult } from "express-validator";
+import {
+  body,
+  matchedData,
+  param,
+  query,
+  validationResult,
+} from "express-validator";
 import asyncHandler from "express-async-handler";
 import { isAuthed } from "../lib/middleware/authMiddleware";
 import { db } from "../lib/db";
-import { chats, chats_users } from "../lib/db/schemas";
+import { chats, chats_users, users } from "../lib/db/schemas";
 import { count, sql, eq, desc } from "drizzle-orm";
 import { verifyToken } from "../lib/utils/tokens";
 import { client as tursoClient } from "../lib/db";
+import { ErrorWithStatus } from "../types/types";
 
 const POST_Chats = [
   isAuthed,
@@ -191,4 +198,52 @@ const GET_Chats = [
     }
   }),
 ];
-export default { POST_Chats, GET_Chats };
+
+const GET_Chat = [
+  param("chatId").isLength({ min: 24, max: 24 }).escape(),
+  asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+    const valResult = validationResult(req);
+
+    if (!valResult.isEmpty()) {
+      res.status(400).json({
+        success: false,
+        error: {
+          message: "failed validation result",
+        },
+        errors: valResult.array(),
+      });
+      return;
+    } else {
+      const { chatId } = matchedData(req);
+
+      const chatInfo = await db
+        .select({
+          id: chats.id,
+          chatname: chats.chatname,
+          chatLetters: chats.chatLetters,
+          adminName: users.name,
+          membersCount: sql<number>`count(${chats_users.userId})`,
+        })
+        .from(chats)
+        .leftJoin(users, eq(chats.chatAdmin, users.id))
+        .leftJoin(chats_users, eq(chats_users.chatId, chats.id))
+        .where(eq(chats.id, chatId))
+        .groupBy(chats.id);
+
+      if (chatInfo.length === 0) {
+        const error: ErrorWithStatus = new Error("This chat doesn't exist");
+        error.status = 404;
+        next(error);
+        return;
+      } else {
+        res.json({
+          success: true,
+          message: `you are requesting chat ${chatId}`,
+          chatInfo: chatInfo[0],
+        });
+        return;
+      }
+    }
+  }),
+];
+export default { POST_Chats, GET_Chats, GET_Chat };
