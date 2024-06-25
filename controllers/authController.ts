@@ -97,7 +97,7 @@ const signin = [
     }
     // create token
     const secret = new TextEncoder().encode(process.env.JWT_SIGNING_KEY!);
-    const expiresIn = new Date(Date.now() + 1 * 60 * 60 * 1000);
+    const expiresIn = new Date(Date.now() + 8 * 60 * 60 * 1000);
     const accessToken = await new SignJWT({ sub: user.id, name: user.name })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
