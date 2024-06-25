@@ -246,4 +246,77 @@ const GET_Chat = [
     }
   }),
 ];
-export default { POST_Chats, GET_Chats, GET_Chat };
+const PUT_Chat = [
+  isAuthed,
+  param("chatId").isLength({ min: 24, max: 24 }).escape(),
+  body("chatname")
+    .isLength({ min: 4, max: 40 })
+    .withMessage("Name should be between 4 and 40 characters")
+    .escape(),
+  body("chatDescription")
+    .isLength({ min: 1, max: 256 })
+    .withMessage("Chat description should be between 1 and 256 characters long")
+    .escape(),
+  body("chatLetters")
+    .isLength({ min: 2, max: 2 })
+    .withMessage("Must be just 2 characters")
+    .isAlpha()
+    .withMessage("Must be to alphabet letters"),
+  asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+    const valResult = validationResult(req);
+
+    if (!valResult.isEmpty()) {
+      res.status(400).json({
+        success: false,
+        error: {
+          message: "validation result error",
+        },
+        errors: valResult.array(),
+      });
+      return;
+    }
+    const { chatId, chatname, chatLetters, chatDescription } = matchedData(req);
+
+    // get chat
+    const chat = await db.query.chats.findFirst({
+      where: (chat, { eq }) => eq(chat.id, chatId),
+    });
+
+    if (!chat) {
+      const error: ErrorWithStatus = new Error("Chat not found.");
+      error.status = 404;
+      next(error);
+    } else {
+      // check if authed user is the chat admin
+      const isUserAdmin = chat.chatAdmin === req.userId;
+
+      // revoke if not admin
+      if (!isUserAdmin) {
+        res.status(403).json({
+          success: false,
+          error: {
+            message: "You are not allowed to access this resource",
+          },
+        });
+        return;
+      } else {
+        // if valid data, update record.
+        const updatedChat = await db
+          .update(chats)
+          .set({
+            chatname: chatname,
+            chatLetters: chatLetters,
+            chatDescription: chatDescription,
+          })
+          .where(eq(chats.id, chatId))
+          .returning();
+
+        res.json({
+          success: true,
+          message: `chat: ${updatedChat[0].id} has been updated`,
+        });
+      }
+    }
+  }),
+];
+export default { POST_Chats, GET_Chats, GET_Chat, PUT_Chat };
