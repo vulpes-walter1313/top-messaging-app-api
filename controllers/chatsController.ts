@@ -440,6 +440,75 @@ const GET_Membership = [
   }),
 ];
 
+const DELETE_Membership = [
+  isAuthed,
+  param("chatId").isLength({ min: 24, max: 24 }).escape(),
+  asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+    const valResult = validationResult(req);
+
+    if (!valResult.isEmpty()) {
+      res.status(400).json({
+        success: false,
+        error: {
+          message: "Validation failed",
+        },
+        errors: valResult.array(),
+      });
+      return;
+    }
+
+    const { chatId } = matchedData(req);
+    const userId = req.userId;
+    const user = await db.query.users.findFirst({
+      where: (user, { eq }) => eq(user.id, userId!),
+    });
+    const chat = await db.query.chats.findFirst({
+      where: (chat, { eq }) => eq(chat.id, chatId),
+    });
+
+    // check if user is already in chats_users for that specific chat.
+    if (user && chat) {
+      const chat_user = await db
+        .select({ chatId: chats_users.chatId, userId: chats_users.userId })
+        .from(chats_users)
+        .where(
+          and(eq(chats_users.chatId, chat.id), eq(chats_users.userId, user.id)),
+        );
+      if (chat_user.length === 0) {
+        // if not, return error
+        res.status(409).json({
+          success: true,
+          error: {
+            message: "User was already not a member",
+          },
+        });
+        return;
+      } else {
+        // if they are, delete this record.
+        const deletedMembership = await db
+          .delete(chats_users)
+          .where(
+            and(
+              eq(chats_users.chatId, chat.id),
+              eq(chats_users.userId, user.id),
+            ),
+          )
+          .returning();
+        res.json({
+          success: true,
+          message: `user: ${user.id} was removed from chat: ${deletedMembership[0].chatId}`,
+        });
+        return;
+      }
+    } else {
+      const error: ErrorWithStatus = new Error("User doesn't exist");
+      error.status = 404;
+      next(error);
+      return;
+    }
+  }),
+];
+
 export default {
   POST_Chats,
   GET_Chats,
@@ -447,4 +516,5 @@ export default {
   PUT_Chat,
   DELETE_Chat,
   GET_Membership,
+  DELETE_Membership,
 };

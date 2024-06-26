@@ -9,5 +9,6 @@ router.get("/:chatId", chatsController.GET_Chat);
 router.put("/:chatId", chatsController.PUT_Chat);
 router.delete("/:chatId", chatsController.DELETE_Chat);
 router.get("/:chatId/membership", chatsController.GET_Membership);
+router.delete("/:chatId/membership", chatsController.DELETE_Membership);
 
 export default router;
