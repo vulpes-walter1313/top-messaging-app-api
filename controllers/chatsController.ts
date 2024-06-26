@@ -319,4 +319,58 @@ const PUT_Chat = [
     }
   }),
 ];
-export default { POST_Chats, GET_Chats, GET_Chat, PUT_Chat };
+const DELETE_Chat = [
+  isAuthed,
+  param("chatId").isLength({ min: 24, max: 24 }).escape(),
+  asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+    const valResult = validationResult(req);
+
+    if (!valResult.isEmpty()) {
+      res.status(400).json({
+        success: false,
+        error: {
+          message: "Validation failed",
+        },
+        errors: valResult.array(),
+      });
+      return;
+    }
+    const { chatId } = matchedData(req);
+
+    // get chat
+    const chat = await db.query.chats.findFirst({
+      where: (chat, { eq }) => eq(chat.id, chatId),
+    });
+
+    // if chat doesn't exist then error
+    if (!chat) {
+      const error: ErrorWithStatus = new Error("Chat doesn't exist");
+      error.status = 404;
+      next(error);
+      return;
+    } else {
+      // if chat exists, check if authed user is chatadmin
+      const isUserAdmin = req.userId === chat.chatAdmin;
+
+      if (!isUserAdmin) {
+        const error: ErrorWithStatus = new Error(
+          "You are forbidden from taking this action",
+        );
+        error.status = 403;
+        next(error);
+        return;
+      }
+      // if chat admin, proceed with deletion
+      const deletedChat = await db
+        .delete(chats)
+        .where(eq(chats.id, chatId))
+        .returning();
+      res.json({
+        success: true,
+        message: `chat: ${deletedChat[0].id}-${deletedChat[0].chatname} has been deleted`,
+      });
+      return;
+    }
+  }),
+];
+export default { POST_Chats, GET_Chats, GET_Chat, PUT_Chat, DELETE_Chat };
