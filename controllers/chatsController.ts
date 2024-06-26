@@ -10,7 +10,7 @@ import asyncHandler from "express-async-handler";
 import { isAuthed } from "../lib/middleware/authMiddleware";
 import { db } from "../lib/db";
 import { chats, chats_users, users } from "../lib/db/schemas";
-import { count, sql, eq, desc } from "drizzle-orm";
+import { count, sql, eq, desc, and } from "drizzle-orm";
 import { verifyToken } from "../lib/utils/tokens";
 import { client as tursoClient } from "../lib/db";
 import { ErrorWithStatus } from "../types/types";
@@ -373,4 +373,78 @@ const DELETE_Chat = [
     }
   }),
 ];
-export default { POST_Chats, GET_Chats, GET_Chat, PUT_Chat, DELETE_Chat };
+
+const GET_Membership = [
+  isAuthed,
+  param("chatId").isLength({ min: 24, max: 24 }).escape(),
+  asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+    const valResult = validationResult(req);
+
+    if (!valResult.isEmpty()) {
+      res.status(400).json({
+        success: false,
+        error: {
+          message: "Validation failed",
+        },
+        errors: valResult.array(),
+      });
+      return;
+    }
+
+    const { chatId } = matchedData(req);
+    const userId = req.userId;
+    const user = await db.query.users.findFirst({
+      where: (user, { eq }) => eq(user.id, userId!),
+    });
+    const chat = await db.query.chats.findFirst({
+      where: (chat, { eq }) => eq(chat.id, chatId),
+    });
+
+    // check if user is already in chats_users for that specific chat.
+    if (user && chat) {
+      const chat_user = await db
+        .select({ chatId: chats_users.chatId, userId: chats_users.userId })
+        .from(chats_users)
+        .where(
+          and(eq(chats_users.chatId, chat.id), eq(chats_users.userId, user.id)),
+        );
+      if (chat_user.length === 0) {
+        // if not, add the new record to chats_users
+        const newMembership = await db
+          .insert(chats_users)
+          .values({ chatId: chat.id, userId: user.id })
+          .returning();
+        res.json({
+          success: true,
+          message: `${newMembership[0].userId} is now a member of ${newMembership[0].chatId}`,
+          chatId: newMembership[0].chatId,
+          userId: newMembership[0].userId,
+        });
+        return;
+      } else {
+        // if they are, return already subscribed
+        res.status(409).json({
+          success: false,
+          error: {
+            message: "User is already a member of this chatroom",
+          },
+        });
+        return;
+      }
+    } else {
+      const error: ErrorWithStatus = new Error("User doesn't exist");
+      error.status = 404;
+      next(error);
+      return;
+    }
+  }),
+];
+
+export default {
+  POST_Chats,
+  GET_Chats,
+  GET_Chat,
+  PUT_Chat,
+  DELETE_Chat,
+  GET_Membership,
+};
