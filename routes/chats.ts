@@ -12,5 +12,6 @@ router.get("/:chatId/membership", chatsController.GET_Membership);
 router.delete("/:chatId/membership", chatsController.DELETE_Membership);
 router.post("/:chatId/messages", chatsController.POST_Messages);
 router.get("/:chatId/messages", chatsController.GET_Messages);
+router.delete("/:chatId/messages/:messageId", chatsController.DELETE_Message);
 
 export default router;

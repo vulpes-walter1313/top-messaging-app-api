@@ -606,6 +606,64 @@ const GET_Messages = [
   }),
 ];
 
+const DELETE_Message = [
+  isAuthed,
+  isChatMember,
+  param("chatId").isLength({ min: 24, max: 24 }).escape(),
+  param("messageId").isLength({ min: 24, max: 24 }).escape(),
+  asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+    // validate params
+    const valResult = validationResult(req);
+    if (!valResult.isEmpty()) {
+      res.status(400).json({
+        success: false,
+        error: {
+          message: "Validation Error",
+        },
+        errors: valResult.array(),
+      });
+      return;
+    }
+
+    const { chatId, messageId } = matchedData(req);
+    // check if message exist
+    const message = await db.query.messages.findFirst({
+      where: (message, { eq }) =>
+        and(eq(message.id, messageId), eq(message.chatId, chatId)),
+    });
+
+    if (!message) {
+      const error: ErrorWithStatus = new Error("message doesn't exist");
+      error.status = 404;
+      next(error);
+      return;
+    } else {
+      // check is authed user is message author
+      if (message.authorId === req.userId) {
+        // if author then delete message
+        const deletedMessage = await db
+          .delete(messages)
+          .where(eq(messages.id, message.id))
+          .returning();
+
+        res.json({
+          success: true,
+          message: `Message: ${deletedMessage[0].id} was successfully deleted`,
+        });
+        return;
+      } else {
+        // if not author, throw error
+        const error: ErrorWithStatus = new Error(
+          "You are forbidden from performing this action",
+        );
+        error.status = 403;
+        next(error);
+        return;
+      }
+    }
+  }),
+];
+
 export default {
   POST_Chats,
   GET_Chats,
@@ -616,4 +674,5 @@ export default {
   DELETE_Membership,
   POST_Messages,
   GET_Messages,
+  DELETE_Message,
 };
