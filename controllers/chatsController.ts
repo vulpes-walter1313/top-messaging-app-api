@@ -542,6 +542,70 @@ const POST_Messages = [
   }),
 ];
 
+const GET_Messages = [
+  isAuthed,
+  isChatMember,
+  param("chatId").isLength({ min: 24, max: 24 }).escape(),
+  query("page").isInt(),
+  query("limit").isInt({ min: 50, max: 100 }),
+  asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+    const valResult = validationResult(req);
+    if (!valResult.isEmpty()) {
+      res.status(400).json({
+        success: false,
+        error: {
+          message: "Validation Error",
+        },
+        errors: valResult.array(),
+      });
+      return;
+    }
+
+    const data = matchedData(req);
+
+    let page = parseInt(data.page);
+    const limit = parseInt(data.limit);
+    const chatId: string = data.chatId;
+    let currentPage = page;
+
+    const countRes = await db
+      .select({ count: sql<number>`COUNT(${messages.id})` })
+      .from(messages)
+      .where(eq(messages.chatId, chatId));
+
+    const totalPages = Math.ceil(countRes[0].count / limit);
+    if (currentPage > totalPages) {
+      currentPage = totalPages;
+    }
+    const offset = (currentPage - 1) * limit;
+
+    const dbMessages = await db
+      .select({
+        id: messages.id,
+        author: users.name,
+        content: messages.content,
+        createdAt: messages.createdAt,
+      })
+      .from(messages)
+      .leftJoin(users, eq(users.id, messages.authorId))
+      .where(eq(messages.chatId, chatId))
+      .orderBy(messages.createdAt)
+      .limit(limit)
+      .offset(offset);
+
+    res.json({
+      success: true,
+      numOfMessages: dbMessages.length,
+      totalPages: totalPages,
+      currentPage: currentPage,
+      messages: dbMessages,
+    });
+
+    // at this point, we know the authed user is a member of the chat.
+    return;
+  }),
+];
+
 export default {
   POST_Chats,
   GET_Chats,
@@ -551,4 +615,5 @@ export default {
   GET_Membership,
   DELETE_Membership,
   POST_Messages,
+  GET_Messages,
 };
