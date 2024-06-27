@@ -7,9 +7,9 @@ import {
   validationResult,
 } from "express-validator";
 import asyncHandler from "express-async-handler";
-import { isAuthed } from "../lib/middleware/authMiddleware";
+import { isAuthed, isChatMember } from "../lib/middleware/authMiddleware";
 import { db } from "../lib/db";
-import { chats, chats_users, users } from "../lib/db/schemas";
+import { chats, chats_users, messages, users } from "../lib/db/schemas";
 import { count, sql, eq, desc, and } from "drizzle-orm";
 import { verifyToken } from "../lib/utils/tokens";
 import { client as tursoClient } from "../lib/db";
@@ -509,6 +509,39 @@ const DELETE_Membership = [
   }),
 ];
 
+const POST_Messages = [
+  isAuthed,
+  isChatMember,
+  param("chatId").isLength({ min: 24, max: 24 }).escape(),
+  body("content").isLength({ min: 1, max: 2046 }).escape(),
+  asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+    const valResult = validationResult(req);
+    if (!valResult.isEmpty()) {
+      res.status(400).json({
+        success: false,
+        error: {
+          message: "Validation Error",
+        },
+        errors: valResult.array(),
+      });
+      return;
+    }
+
+    const { chatId, content } = matchedData(req);
+    // at this point, we know the authed user is a member of the chat.
+    const newMessage = await db
+      .insert(messages)
+      .values({ chatId: chatId, authorId: req.userId!, content: content })
+      .returning();
+
+    res.json({
+      success: true,
+      message: `New Message created: ${newMessage[0].id}`,
+    });
+    return;
+  }),
+];
+
 export default {
   POST_Chats,
   GET_Chats,
@@ -517,4 +550,5 @@ export default {
   DELETE_Chat,
   GET_Membership,
   DELETE_Membership,
+  POST_Messages,
 };

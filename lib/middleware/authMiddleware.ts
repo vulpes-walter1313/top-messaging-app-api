@@ -1,5 +1,10 @@
 import type { Request, Response, NextFunction } from "express";
 import { jwtVerify } from "jose";
+import { db } from "../db";
+import asyncHandler from "express-async-handler";
+import { chats, chats_users, users } from "../db/schemas";
+import { and, eq } from "drizzle-orm";
+import { ErrorWithStatus } from "../../types/types";
 
 export async function isAuthed(
   req: Request,
@@ -20,3 +25,33 @@ export async function isAuthed(
     next(err);
   }
 }
+
+export const isChatMember = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction) => {
+    const chatId = req.params.chatId;
+    const userId = req.userId;
+    if (userId && chatId) {
+      const chat_user = await db
+        .select()
+        .from(chats_users)
+        .where(
+          and(eq(chats_users.chatId, chatId), eq(chats_users.userId, userId)),
+        );
+      if (chat_user.length >= 1) {
+        next();
+        return;
+      } else {
+        const error: ErrorWithStatus = new Error(
+          "You're forbidden from accessing this resource",
+        );
+        error.status = 403;
+        next(error);
+        return;
+      }
+    } else {
+      const error = new Error("Some error occcured");
+      next(error);
+      return;
+    }
+  },
+);
