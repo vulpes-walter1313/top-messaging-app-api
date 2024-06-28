@@ -214,6 +214,7 @@ const GET_Chat = [
           id: chats.id,
           chatname: chats.chatname,
           chatLetters: chats.chatLetters,
+          chatDescription: chats.chatDescription,
           adminName: users.name,
           membersCount: sql<number>`count(${chats_users.userId})`,
         })
