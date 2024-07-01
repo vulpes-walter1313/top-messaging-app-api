@@ -14,23 +14,15 @@ import { count, sql, eq, and, like, or } from "drizzle-orm";
 import { verifyToken } from "../lib/utils/tokens";
 import { ErrorWithStatus } from "../types/types";
 import { getChatData } from "../lib/data";
+import { validateData } from "../lib/middleware/validationMiddleware";
 
 const POST_Chats = [
   isAuthed,
   body("chatname").isString().isLength({ min: 3, max: 32 }).escape(),
   body("chatTwoLetters").isString().isLength({ min: 2, max: 2 }),
   body("chatDescription").isString().isLength({ min: 1, max: 256 }).escape(),
+  validateData,
   asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-    const valResult = validationResult(req);
-    if (!valResult.isEmpty()) {
-      res.json({
-        success: false,
-        message: "Failed Validation",
-        messages: valResult.array(),
-      });
-      return;
-    }
-
     const { chatname, chatTwoLetters, chatDescription } = matchedData(req);
     const user = await db.query.users.findFirst({
       where: (user, { eq }) => eq(user.id, req.userId!),
@@ -68,37 +60,81 @@ const GET_Chats = [
   query("limit").isInt({ min: 5, max: 20 }),
   query("page").isInt({ min: 1 }),
   query("search").trim().escape(),
+  validateData,
   asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-    // Check validation results
-    const valResult = validationResult(req);
-    if (!valResult.isEmpty()) {
-      res.status(400).json({
-        success: false,
-        error: {
-          message: "Validation result error",
-          errors: valResult.array(),
-        },
-      });
-    } else {
-      // validation passed
-      const data = matchedData(req);
-      const type: string = data.type;
-      const limit: number = parseInt(data.limit);
-      const page: number = parseInt(data.page);
-      const searchQuery: string | undefined = data.search;
-      let currentPage = page;
-      switch (type) {
-        case "explore":
-          // this returns a result wether the user is authed or not.
+    // validation passed
+    const data = matchedData(req);
+    const type: string = data.type;
+    const limit: number = parseInt(data.limit);
+    const page: number = parseInt(data.page);
+    const searchQuery: string | undefined = data.search;
+    let currentPage = page;
+    switch (type) {
+      case "explore":
+        // this returns a result wether the user is authed or not.
+        const countResult = await db
+          .select({ value: count() })
+          .from(chats)
+          .where(
+            or(
+              like(chats.chatname, `%${searchQuery}%`),
+              like(chats.id, `%${searchQuery}%`),
+            ),
+          );
+        const chatCount = countResult[0].value;
+        const totalPages = Math.ceil(chatCount / limit);
+        if (currentPage > totalPages) {
+          currentPage = totalPages;
+        }
+        const offset = (currentPage - 1) * limit;
+
+        const chatsData = await getChatData({
+          type: type,
+          limit: limit,
+          offset: offset,
+          search: searchQuery,
+        });
+
+        res.json({
+          success: true,
+          totalChats: chatCount,
+          totalPages,
+          currentPage,
+          chats: chatsData,
+        });
+        return;
+        break;
+      case "joined":
+        // verify token
+        const token = req.cookies.session;
+        await verifyToken(req, token);
+        // get logged in user
+
+        const userId = req.userId;
+        if (!userId) {
+          res.status(401).json({
+            success: false,
+            error: {
+              message: "User not authenticated",
+            },
+          });
+          return;
+        } else {
+          // user is authed
           const countResult = await db
-            .select({ value: count() })
-            .from(chats)
+            .select({ value: sql<number>`COUNT(${chats_users.chatId})` })
+            .from(chats_users)
+            .leftJoin(chats, eq(chats_users.chatId, chats.id))
             .where(
-              or(
-                like(chats.chatname, `%${searchQuery}%`),
-                like(chats.id, `%${searchQuery}%`),
+              and(
+                eq(chats_users.userId, userId),
+                or(
+                  like(chats.chatname, `%${searchQuery}%`),
+                  like(chats.id, `%${searchQuery}%`),
+                ),
               ),
             );
+
           const chatCount = countResult[0].value;
           const totalPages = Math.ceil(chatCount / limit);
           if (currentPage > totalPages) {
@@ -111,6 +147,7 @@ const GET_Chats = [
             limit: limit,
             offset: offset,
             search: searchQuery,
+            userId: userId,
           });
 
           res.json({
@@ -121,122 +158,53 @@ const GET_Chats = [
             chats: chatsData,
           });
           return;
-          break;
-        case "joined":
-          // verify token
-          const token = req.cookies.session;
-          await verifyToken(req, token);
-          // get logged in user
-
-          const userId = req.userId;
-          if (!userId) {
-            res.status(401).json({
-              success: false,
-              error: {
-                message: "User not authenticated",
-              },
-            });
-            return;
-          } else {
-            // user is authed
-            const countResult = await db
-              .select({ value: sql<number>`COUNT(${chats_users.chatId})` })
-              .from(chats_users)
-              .leftJoin(chats, eq(chats_users.chatId, chats.id))
-              .where(
-                and(
-                  eq(chats_users.userId, userId),
-                  or(
-                    like(chats.chatname, `%${searchQuery}%`),
-                    like(chats.id, `%${searchQuery}%`),
-                  ),
-                ),
-              );
-
-            const chatCount = countResult[0].value;
-            const totalPages = Math.ceil(chatCount / limit);
-            if (currentPage > totalPages) {
-              currentPage = totalPages;
-            }
-            const offset = (currentPage - 1) * limit;
-
-            const chatsData = await getChatData({
-              type: type,
-              limit: limit,
-              offset: offset,
-              search: searchQuery,
-              userId: userId,
-            });
-
-            res.json({
-              success: true,
-              totalChats: chatCount,
-              totalPages,
-              currentPage,
-              chats: chatsData,
-            });
-            return;
-          }
-          // get the number of chats that the user is joined.
-          break;
-        default:
-          res.status(500).json({
-            success: false,
-            error: {
-              message: "Unexpected Server Error",
-            },
-          });
-          break;
-      }
+        }
+        break;
+      default:
+        res.status(500).json({
+          success: false,
+          error: {
+            message: "Unexpected Server Error",
+          },
+        });
+        break;
     }
   }),
 ];
 
 const GET_Chat = [
   param("chatId").isLength({ min: 24, max: 24 }).escape(),
+  validateData,
   asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-    const valResult = validationResult(req);
+    const { chatId } = matchedData(req);
 
-    if (!valResult.isEmpty()) {
-      res.status(400).json({
-        success: false,
-        error: {
-          message: "failed validation result",
-        },
-        errors: valResult.array(),
-      });
+    const chatInfo = await db
+      .select({
+        id: chats.id,
+        chatname: chats.chatname,
+        chatLetters: chats.chatLetters,
+        chatDescription: chats.chatDescription,
+        adminName: users.name,
+        membersCount: sql<number>`count(${chats_users.userId})`,
+      })
+      .from(chats)
+      .leftJoin(users, eq(chats.chatAdmin, users.id))
+      .leftJoin(chats_users, eq(chats_users.chatId, chats.id))
+      .where(eq(chats.id, chatId))
+      .groupBy(chats.id);
+
+    if (chatInfo.length === 0) {
+      const error: ErrorWithStatus = new Error("This chat doesn't exist");
+      error.status = 404;
+      next(error);
       return;
     } else {
-      const { chatId } = matchedData(req);
-
-      const chatInfo = await db
-        .select({
-          id: chats.id,
-          chatname: chats.chatname,
-          chatLetters: chats.chatLetters,
-          chatDescription: chats.chatDescription,
-          adminName: users.name,
-          membersCount: sql<number>`count(${chats_users.userId})`,
-        })
-        .from(chats)
-        .leftJoin(users, eq(chats.chatAdmin, users.id))
-        .leftJoin(chats_users, eq(chats_users.chatId, chats.id))
-        .where(eq(chats.id, chatId))
-        .groupBy(chats.id);
-
-      if (chatInfo.length === 0) {
-        const error: ErrorWithStatus = new Error("This chat doesn't exist");
-        error.status = 404;
-        next(error);
-        return;
-      } else {
-        res.json({
-          success: true,
-          message: `you are requesting chat ${chatId}`,
-          chatInfo: chatInfo[0],
-        });
-        return;
-      }
+      res.json({
+        success: true,
+        message: `you are requesting chat ${chatId}`,
+        chatInfo: chatInfo[0],
+      });
+      return;
     }
   }),
 ];
@@ -256,19 +224,8 @@ const PUT_Chat = [
     .withMessage("Must be just 2 characters")
     .isAlpha()
     .withMessage("Must be to alphabet letters"),
+  validateData,
   asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-    const valResult = validationResult(req);
-
-    if (!valResult.isEmpty()) {
-      res.status(400).json({
-        success: false,
-        error: {
-          message: "validation result error",
-        },
-        errors: valResult.array(),
-      });
-      return;
-    }
     const { chatId, chatname, chatLetters, chatDescription } = matchedData(req);
 
     // get chat
@@ -316,19 +273,8 @@ const PUT_Chat = [
 const DELETE_Chat = [
   isAuthed,
   param("chatId").isLength({ min: 24, max: 24 }).escape(),
+  validateData,
   asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-    const valResult = validationResult(req);
-
-    if (!valResult.isEmpty()) {
-      res.status(400).json({
-        success: false,
-        error: {
-          message: "Validation failed",
-        },
-        errors: valResult.array(),
-      });
-      return;
-    }
     const { chatId } = matchedData(req);
 
     // get chat
@@ -371,20 +317,8 @@ const DELETE_Chat = [
 const GET_Membership = [
   isAuthed,
   param("chatId").isLength({ min: 24, max: 24 }).escape(),
+  validateData,
   asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-    const valResult = validationResult(req);
-
-    if (!valResult.isEmpty()) {
-      res.status(400).json({
-        success: false,
-        error: {
-          message: "Validation failed",
-        },
-        errors: valResult.array(),
-      });
-      return;
-    }
-
     const { chatId } = matchedData(req);
     const userId = req.userId;
     const user = await db.query.users.findFirst({
@@ -437,20 +371,8 @@ const GET_Membership = [
 const DELETE_Membership = [
   isAuthed,
   param("chatId").isLength({ min: 24, max: 24 }).escape(),
+  validateData,
   asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-    const valResult = validationResult(req);
-
-    if (!valResult.isEmpty()) {
-      res.status(400).json({
-        success: false,
-        error: {
-          message: "Validation failed",
-        },
-        errors: valResult.array(),
-      });
-      return;
-    }
-
     const { chatId } = matchedData(req);
     const userId = req.userId;
     const user = await db.query.users.findFirst({
@@ -505,22 +427,11 @@ const DELETE_Membership = [
 
 const POST_Messages = [
   isAuthed,
-  isChatMember,
   param("chatId").isLength({ min: 24, max: 24 }).escape(),
   body("content").isLength({ min: 1, max: 2046 }).escape(),
+  validateData,
+  isChatMember,
   asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-    const valResult = validationResult(req);
-    if (!valResult.isEmpty()) {
-      res.status(400).json({
-        success: false,
-        error: {
-          message: "Validation Error",
-        },
-        errors: valResult.array(),
-      });
-      return;
-    }
-
     const { chatId, content } = matchedData(req);
     // at this point, we know the authed user is a member of the chat.
     const newMessage = await db
@@ -538,23 +449,12 @@ const POST_Messages = [
 
 const GET_Messages = [
   isAuthed,
-  isChatMember,
   param("chatId").isLength({ min: 24, max: 24 }).escape(),
   query("page").isInt(),
   query("limit").isInt({ min: 50, max: 100 }),
+  validateData,
+  isChatMember,
   asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-    const valResult = validationResult(req);
-    if (!valResult.isEmpty()) {
-      res.status(400).json({
-        success: false,
-        error: {
-          message: "Validation Error",
-        },
-        errors: valResult.array(),
-      });
-      return;
-    }
-
     const data = matchedData(req);
 
     let page = parseInt(data.page);
@@ -602,23 +502,11 @@ const GET_Messages = [
 
 const DELETE_Message = [
   isAuthed,
-  isChatMember,
   param("chatId").isLength({ min: 24, max: 24 }).escape(),
   param("messageId").isLength({ min: 24, max: 24 }).escape(),
+  validateData,
+  isChatMember,
   asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-    // validate params
-    const valResult = validationResult(req);
-    if (!valResult.isEmpty()) {
-      res.status(400).json({
-        success: false,
-        error: {
-          message: "Validation Error",
-        },
-        errors: valResult.array(),
-      });
-      return;
-    }
-
     const { chatId, messageId } = matchedData(req);
     // check if message exist
     const message = await db.query.messages.findFirst({
