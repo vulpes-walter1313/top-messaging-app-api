@@ -10,7 +10,7 @@ import asyncHandler from "express-async-handler";
 import { isAuthed, isChatMember } from "../lib/middleware/authMiddleware";
 import { db } from "../lib/db";
 import { chats, chats_users, messages, users } from "../lib/db/schemas";
-import { count, sql, eq, and, like, or } from "drizzle-orm";
+import { count, sql, eq, and, like, or, desc } from "drizzle-orm";
 import { verifyToken } from "../lib/utils/tokens";
 import { ErrorWithStatus } from "../types/types";
 import { getChatData } from "../lib/data";
@@ -483,7 +483,7 @@ const GET_Messages = [
       .from(messages)
       .leftJoin(users, eq(users.id, messages.authorId))
       .where(eq(messages.chatId, chatId))
-      .orderBy(messages.createdAt)
+      .orderBy(desc(messages.createdAt))
       .limit(limit)
       .offset(offset);
 
