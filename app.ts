@@ -14,6 +14,7 @@ import chatsRouter from "./routes/chats";
 import authRouter from "./routes/auth";
 import http from "http";
 import { ErrorWithStatus } from "./types/types";
+import cors from "cors";
 
 const app = express();
 
@@ -22,6 +23,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
+app.use(cors({ origin: 'http://localhost:5173', credentials: true}))
 
 app.use("/", authRouter);
 app.use("/", indexRouter);
