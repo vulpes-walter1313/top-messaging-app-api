@@ -476,6 +476,7 @@ const GET_Messages = [
     const dbMessages = await db
       .select({
         id: messages.id,
+        authorId: messages.authorId,
         author: users.name,
         content: messages.content,
         createdAt: messages.createdAt,
@@ -486,13 +487,31 @@ const GET_Messages = [
       .orderBy(desc(messages.createdAt))
       .limit(limit)
       .offset(offset);
-
+      
+      //@ts-ignore
+    const finalMessages: {
+      id: string;
+      authorId: string;
+      author: string | null;
+      authorIsUser: boolean;
+      content: string | null;
+      createdAt: string | null;
+  }[] = dbMessages.map(message => {
+        if (message.authorId === req.userId) {
+        // @ts-ignore
+          message.authorIsUser = true;
+        } else {
+        // @ts-ignore
+          message.authorIsUser = false;
+        }
+        return message;
+    })
     res.json({
       success: true,
       numOfMessages: dbMessages.length,
       totalPages: totalPages,
       currentPage: currentPage,
-      messages: dbMessages,
+      messages: finalMessages,
     });
 
     // at this point, we know the authed user is a member of the chat.
