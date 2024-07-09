@@ -173,6 +173,7 @@ const GET_Chats = [
 ];
 
 const GET_Chat = [
+  isAuthed,
   param("chatId").isLength({ min: 24, max: 24 }).escape(),
   validateData,
   asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
@@ -184,6 +185,7 @@ const GET_Chat = [
         chatname: chats.chatname,
         chatLetters: chats.chatLetters,
         chatDescription: chats.chatDescription,
+        chatAdmin: chats.chatAdmin,
         adminName: users.name,
         membersCount: sql<number>`count(${chats_users.userId})`,
       })
@@ -203,6 +205,7 @@ const GET_Chat = [
         success: true,
         message: `you are requesting chat ${chatId}`,
         chatInfo: chatInfo[0],
+        userIsAdmin: chatInfo[0].chatAdmin === req.userId ? true : false,
       });
       return;
     }
@@ -487,8 +490,8 @@ const GET_Messages = [
       .orderBy(desc(messages.createdAt))
       .limit(limit)
       .offset(offset);
-      
-      //@ts-ignore
+
+    //@ts-ignore
     const finalMessages: {
       id: string;
       authorId: string;
@@ -496,21 +499,25 @@ const GET_Messages = [
       authorIsUser: boolean;
       content: string | null;
       createdAt: string | null;
-  }[] = dbMessages.map(message => {
-        if (message.authorId === req.userId) {
+    }[] = dbMessages.map((message) => {
+      if (message.authorId === req.userId) {
         // @ts-ignore
-          message.authorIsUser = true;
-        } else {
+        message.authorIsUser = true;
+      } else {
         // @ts-ignore
-          message.authorIsUser = false;
-        }
-        return message;
-    })
+        message.authorIsUser = false;
+      }
+      return message;
+    });
+    const chatInfo = await db.query.chats.findFirst({
+      where: eq(chats.id, chatId),
+    });
     res.json({
       success: true,
       numOfMessages: dbMessages.length,
       totalPages: totalPages,
       currentPage: currentPage,
+      userIsAdmin: chatInfo?.chatAdmin === req.userId ? true : false,
       messages: finalMessages,
     });
 
