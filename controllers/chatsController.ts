@@ -354,11 +354,9 @@ const GET_Membership = [
         return;
       } else {
         // if they are, return already subscribed
-        res.status(409).json({
-          success: false,
-          error: {
-            message: "User is already a member of this chatroom",
-          },
+        res.json({
+          success: true,
+          message: "User is already a member of this chatroom",
         });
         return;
       }
@@ -539,6 +537,9 @@ const DELETE_Message = [
       where: (message, { eq }) =>
         and(eq(message.id, messageId), eq(message.chatId, chatId)),
     });
+    const chat = await db.query.chats.findFirst({
+      where: eq(chats.id, chatId),
+    });
 
     if (!message) {
       const error: ErrorWithStatus = new Error("message doesn't exist");
@@ -546,8 +547,8 @@ const DELETE_Message = [
       next(error);
       return;
     } else {
-      // check is authed user is message author
-      if (message.authorId === req.userId) {
+      // check is authed user is message author or if authed user is the admin of the chat itself
+      if (message.authorId === req.userId || chat?.chatAdmin === req.userId) {
         // if author then delete message
         const deletedMessage = await db
           .delete(messages)
