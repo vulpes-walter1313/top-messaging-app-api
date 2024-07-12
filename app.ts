@@ -9,7 +9,7 @@ import path from "path";
 import cookieParser from "cookie-parser";
 import logger from "morgan";
 import indexRouter from "./routes/index";
-import usersRouter from "./routes/users";
+import userRouter from "./routes/user";
 import chatsRouter from "./routes/chats";
 import authRouter from "./routes/auth";
 import http from "http";
@@ -27,7 +27,7 @@ app.use(cors({ origin: "http://localhost:5173", credentials: true }));
 
 app.use("/", authRouter);
 app.use("/", indexRouter);
-app.use("/users", usersRouter);
+app.use("/user", userRouter);
 app.use("/chats", chatsRouter);
 const server = http.createServer(app);
 const port = parseInt(process.env.PORT || "3000");
