@@ -8,7 +8,11 @@ router.get("/", [
   isAuthed,
   function (req: Request, res: Response, next: NextFunction) {
     const name = req.session?.name;
-    res.json({ success: true, loggedIn: true, userName: name ? name : "unknown" });
+    res.json({
+      success: true,
+      loggedIn: true,
+      userName: name ? name : "unknown",
+    });
   },
 ]);
 

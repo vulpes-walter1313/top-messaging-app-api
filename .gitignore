@@ -65,3 +65,6 @@ dist
 
 # database
 local.db*
+
+# seed file
+seedDb.ts

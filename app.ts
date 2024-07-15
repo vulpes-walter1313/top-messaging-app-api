@@ -15,6 +15,7 @@ import authRouter from "./routes/auth";
 import http from "http";
 import { ErrorWithStatus } from "./types/types";
 import cors from "cors";
+import helmet from "helmet";
 
 const app = express();
 
@@ -23,7 +24,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
-app.use(cors({ origin: "http://localhost:5173", credentials: true }));
+app.use(cors({ origin: process.env.FRONTEND_ORIGIN, credentials: true }));
+app.use(helmet());
 
 app.use("/", authRouter);
 app.use("/", indexRouter);
