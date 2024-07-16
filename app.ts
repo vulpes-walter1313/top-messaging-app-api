@@ -24,7 +24,15 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
-app.use(cors({ origin: process.env.FRONTEND_ORIGIN, credentials: true }));
+app.use(
+  cors({
+    origin:
+      process.env.NODE_ENV === "production"
+        ? process.env.PROD_FRONTEND_ORIGIN
+        : process.env.DEV_FRONTEND_ORIGIN,
+    credentials: true,
+  }),
+);
 app.use(helmet());
 
 app.use("/", authRouter);
