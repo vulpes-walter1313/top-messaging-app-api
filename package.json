@@ -4,13 +4,13 @@
   "private": true,
   "main": "dist/api.js",
   "scripts": {
-    "start": "node dist/app.js",
+    "start": "NODE_ENV=production node dist/app.js",
     "build": "tsc",
-    "dev": "nodemon app.ts",
+    "dev": "NODE_ENV=development nodemon app.ts",
     "pretty": "prettier . --write",
-    "db:migrate": "drizzle-kit generate && drizzle-kit migrate",
+    "db:migrate": "NODE_ENV=development drizzle-kit generate && drizzle-kit migrate",
     "prod:db:migrate": "NODE_ENV=production drizzle-kit generate && drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio",
+    "db:studio": "NODE_ENV=development drizzle-kit studio",
     "prod:db:studio": "NODE_ENV=production drizzle-kit studio"
   },
   "dependencies": {
