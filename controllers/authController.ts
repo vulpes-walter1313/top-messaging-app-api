@@ -105,7 +105,11 @@ const signin = [
       .sign(secret);
 
     // send token to cookie
-    res.cookie("session", accessToken, { expires: expiresIn, httpOnly: true });
+    res.cookie("session", accessToken, {
+      expires: expiresIn,
+      httpOnly: true,
+      sameSite: "lax",
+    });
 
     // respond
     res.json({ success: true, message: "auth token sent at httpOnly Cookie" });
