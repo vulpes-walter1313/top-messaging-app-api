@@ -19,6 +19,8 @@ import helmet from "helmet";
 import { Server as SocketServer } from "socket.io";
 import { jwtVerify } from "jose";
 import { db } from "./lib/db";
+import { messages, users } from "./lib/db/schemas";
+import { desc, eq } from "drizzle-orm";
 
 const app = express();
 
@@ -73,18 +75,85 @@ io.use((socket, next) => {
 // websocket events
 io.on("connection", (socket) => {
   console.log(`a user connected: ${socket.id}`);
-  socket.on("join-room", (room) => {
+
+  socket.on("join-room", async (room) => {
     socket.join(room);
     console.log(`${socket.id} joined room: ${room}`);
+
+    const dbMessages = await db
+      .select({
+        id: messages.id,
+        authorId: messages.authorId,
+        author: users.name,
+        content: messages.content,
+        createdAt: messages.createdAt,
+      })
+      .from(messages)
+      .leftJoin(users, eq(users.id, messages.authorId))
+      .where(eq(messages.chatId, room))
+      .orderBy(desc(messages.createdAt))
+      .limit(50);
+
+    //@ts-ignore
+    const finalMessages: {
+      id: string;
+      authorId: string;
+      author: string | null;
+      content: string | null;
+      createdAt: string | null;
+    }[] = dbMessages.map((message) => {
+      if (message.authorId === socket.data.userId) {
+        // @ts-ignore
+        message.authorIsUser = true;
+      } else {
+        // @ts-ignore
+        message.authorIsUser = false;
+      }
+      return message;
+    });
+    console.log("sending initial messages");
+    socket.emit("receive-initial-messages", finalMessages);
   });
-  socket.on("send-message", async (message, room) => {
+
+  socket.on("send-message", async (message, room, callback) => {
     if (room === "" || room === undefined) {
       return;
     }
     const user = await db.query.users.findFirst({
       where: (user, { eq }) => eq(user.id, socket.data.userId!),
     });
-    socket.to(room).emit("receive-message", `${user?.name} ${message}`);
+    const newMessage = await db
+      .insert(messages)
+      .values({ chatId: room, authorId: socket.data.userId, content: message })
+      .returning();
+
+    //@ts-ignore
+    const finalMessage: {
+      id: string;
+      authorId: string;
+      author: string | null;
+      content: string | null;
+      createdAt: string | null;
+    } = newMessage.map((message) => {
+      if (message.authorId === socket.data.userId) {
+        // @ts-ignore
+        message.authorIsUser = true;
+      } else {
+        // @ts-ignore
+        message.authorIsUser = false;
+      }
+      // @ts-ignore
+      message.author = user.name;
+      return message;
+    })[0];
+
+    socket.to(room).emit("receive-message", finalMessage);
+    callback(finalMessage);
+  });
+
+  socket.on("leave-room", (room) => {
+    socket.leave(room);
+    console.log(`${socket.id} left room: ${room}`);
   });
   socket.on("disconnect", (reason) => {
     console.log(`${socket.id} disconnected because: `, reason);
