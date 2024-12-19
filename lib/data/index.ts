@@ -132,3 +132,10 @@ export const getChatData = async ({
     }
   }
 };
+
+export const getUserById = async (userId: string) => {
+  const user = await db.query.users.findFirst({
+    where: (user, { eq }) => eq(user.id, userId),
+  });
+  return user;
+};

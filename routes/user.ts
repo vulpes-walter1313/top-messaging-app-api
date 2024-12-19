@@ -42,7 +42,7 @@ router.get("/token", [
       .setIssuedAt()
       .setExpirationTime(expiresIn)
       .sign(secret);
-    res.json({ success: true, token: accessToken });
+    res.json({ success: true, token: accessToken, userId: dbUser.id });
     return;
   }),
 ]);

@@ -21,6 +21,8 @@ import { jwtVerify } from "jose";
 import { db } from "./lib/db";
 import { messages, users } from "./lib/db/schemas";
 import { desc, eq } from "drizzle-orm";
+import { getUserById } from "./lib/data";
+import { instrument } from "@socket.io/admin-ui";
 
 const app = express();
 
@@ -31,10 +33,12 @@ app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
 app.use(
   cors({
-    origin:
+    origin: [
       process.env.NODE_ENV === "production"
-        ? process.env.PROD_FRONTEND_ORIGIN
-        : process.env.DEV_FRONTEND_ORIGIN,
+        ? process.env.PROD_FRONTEND_ORIGIN!
+        : process.env.DEV_FRONTEND_ORIGIN!,
+      "https://admin.socket.io",
+    ],
     credentials: true,
   }),
 );
@@ -51,8 +55,15 @@ const io = new SocketServer(server, {
       process.env.NODE_ENV === "production"
         ? process.env.PROD_FRONTEND_ORIGIN!
         : process.env.DEV_FRONTEND_ORIGIN!,
+      "https://admin.socket.io",
     ],
+    credentials: true,
   },
+});
+
+instrument(io, {
+  auth: false,
+  mode: "development",
 });
 
 io.use((socket, next) => {
@@ -65,6 +76,7 @@ io.use((socket, next) => {
   jwtVerify(token, secret)
     .then((payload) => {
       socket.data.userId = payload.payload.sub;
+      socket.data.userName = payload.payload.name;
       next();
     })
     .catch((err) => {
@@ -74,11 +86,11 @@ io.use((socket, next) => {
 
 // websocket events
 io.on("connection", (socket) => {
-  console.log(`a user connected: ${socket.id}`);
+  // console.log(`a user connected: ${socket.data.userName}`);
 
   socket.on("join-room", async (room) => {
     socket.join(room);
-    console.log(`${socket.id} joined room: ${room}`);
+    // console.log(`${socket.data.userName} joined room: ${room} ${Date.now()}`);
 
     const dbMessages = await db
       .select({
@@ -94,69 +106,71 @@ io.on("connection", (socket) => {
       .orderBy(desc(messages.createdAt))
       .limit(50);
 
-    //@ts-ignore
-    const finalMessages: {
-      id: string;
-      authorId: string;
-      author: string | null;
-      content: string | null;
-      createdAt: string | null;
-    }[] = dbMessages.map((message) => {
-      if (message.authorId === socket.data.userId) {
-        // @ts-ignore
-        message.authorIsUser = true;
-      } else {
-        // @ts-ignore
-        message.authorIsUser = false;
-      }
-      return message;
-    });
-    console.log("sending initial messages");
-    socket.emit("receive-initial-messages", finalMessages);
+    // console.log(`sending initial messages to ${socket.data.userName}`);
+    socket.emit("receive-initial-messages", dbMessages);
   });
 
   socket.on("send-message", async (message, room, callback) => {
     if (room === "" || room === undefined) {
       return;
     }
-    const user = await db.query.users.findFirst({
-      where: (user, { eq }) => eq(user.id, socket.data.userId!),
-    });
-    const newMessage = await db
+    const newMessageId = await db
       .insert(messages)
       .values({ chatId: room, authorId: socket.data.userId, content: message })
-      .returning();
+      .returning({ id: messages.id });
 
-    //@ts-ignore
-    const finalMessage: {
-      id: string;
-      authorId: string;
-      author: string | null;
-      content: string | null;
-      createdAt: string | null;
-    } = newMessage.map((message) => {
-      if (message.authorId === socket.data.userId) {
-        // @ts-ignore
-        message.authorIsUser = true;
-      } else {
-        // @ts-ignore
-        message.authorIsUser = false;
-      }
-      // @ts-ignore
-      message.author = user.name;
-      return message;
-    })[0];
-
-    socket.to(room).emit("receive-message", finalMessage);
-    callback(finalMessage);
+    const finalMessage = await db
+      .select({
+        id: messages.id,
+        authorId: messages.authorId,
+        author: users.name,
+        content: messages.content,
+        createdAt: messages.createdAt,
+      })
+      .from(messages)
+      .leftJoin(users, eq(users.id, messages.authorId))
+      .where(eq(messages.id, newMessageId[0].id));
+    // console.log(`${socket.data.userName} is broadcasting to ${room}`)
+    socket.to(room).emit("receive-message", finalMessage[0]);
+    callback(finalMessage[0]);
   });
 
+  socket.on("delete-message", async (messageId: string, callback) => {
+    const messageToDelete = await db.query.messages.findFirst({
+      where: (message, { eq }) => eq(message.id, messageId),
+    });
+    if (!messageToDelete) {
+      callback({
+        success: false,
+        error: "Message you want to delete does not exist",
+      });
+      return;
+    }
+
+    const user = await getUserById(socket.data.userId);
+    if (!user) {
+      callback({ success: false, error: "User not logged in" });
+      return;
+    }
+
+    if (messageToDelete.authorId != user.id) {
+      callback({ success: false, error: "User not allowed" });
+      return;
+    }
+
+    const messageDeleted = await db
+      .delete(messages)
+      .where(eq(messages.id, messageId))
+      .returning({ id: messages.id });
+    callback({ success: true, messageDeleted: messageDeleted[0].id });
+    return;
+  });
   socket.on("leave-room", (room) => {
     socket.leave(room);
-    console.log(`${socket.id} left room: ${room}`);
+    // console.log(`${socket.data.userName} left room: ${room} ${Date.now()}`);
   });
   socket.on("disconnect", (reason) => {
-    console.log(`${socket.id} disconnected because: `, reason);
+    // console.log(`${socket.data.userName} disconnected because: `, reason);
   });
 });
 
