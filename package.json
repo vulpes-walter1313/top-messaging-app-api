@@ -17,6 +17,7 @@
   "dependencies": {
     "@libsql/client": "^0.14.0",
     "@paralleldrive/cuid2": "^2.2.2",
+    "@socket.io/admin-ui": "^0.5.1",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "~1.4.7",
     "cors": "^2.8.5",
